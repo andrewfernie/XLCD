@@ -11,7 +11,7 @@ unsigned long lastCall = 0;
 
 #if(LCD_cols==16)
 #define LCD_EMPTY   F("                ")
-#elif
+#else
 #define LCD_EMPTY   F("                    ")
 #endif
 

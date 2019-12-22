@@ -12,10 +12,11 @@
  * Includes
  * =============================================== 
  */
+
 #include <EEPROM.h>
 #include <simpleThread.h>
-#include <AltSoftSerial.h>
 #include <Encoder.h>
+
 
 /* XLCD Prototype on Arduino UNO or compatible
  * Frank (xpix) Herrmann / 07/2013
@@ -38,10 +39,10 @@
 #define GRBL_SERIAL     9600
 
 // LCD -------------------------------------------
-//#define LCD_ADDR		   0x27  // I2C LCD Address
-#define LCD_4BIT
+#define LCD_ADDR		   0x27  // I2C LCD Address
+//#define LCD_4BIT
 
-#define LCD_cols			16
+#define LCD_cols			20
 #define LCD_rows			4
 
 #if defined(LCD_4BIT)
@@ -121,7 +122,7 @@ volatile byte  button_pressed;
  * =============================================== 
  */
 //SoftwareSerial grblSerial(GRBL_RX, GRBL_TX); // RX, TX
-AltSoftSerial grblSerial;
+#define grblSerial    Serial2
 
 // Add Threads to refresh status informations from GRBL
 #define _sT_cnt  _sT_cnt_3    // count of threads(?, $G)
