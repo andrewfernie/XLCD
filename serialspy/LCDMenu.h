@@ -1,12 +1,12 @@
-/* 
-* LCDMenu.h
-*
-* Created: 27.08.2013 15:21:24
-* Author: C5125630
-*
-* Please use only this LCD lib:
-* https://bitbucket.org/fmalpartida/new-liquidcrystal/wiki/Home
-*/
+// 
+// LCDMenu.h
+//
+// Created: 27.08.2013 15:21:24
+// Author: C5125630
+//
+//  Please use only this LCD lib:
+// https://bitbucket.org/fmalpartida/new-liquidcrystal/wiki/Home
+//
 
 
 #ifndef LCDMenu_h

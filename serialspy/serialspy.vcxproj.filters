@@ -16,13 +16,12 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="serialspy.ino" />
-    <None Include="buttons_thread.ino" />
-    <None Include="config_buttons.ino" />
     <None Include="console.ino" />
-    <None Include="lcd_menu.ino" />
     <None Include="lcd_screens.ino" />
     <None Include="persistance.ino" />
     <None Include="timebased_threads.ino" />
+    <None Include="serial_io.ino" />
+    <None Include="encoder_io.ino" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="__vm\.serialspy.vsarduino.h">
@@ -31,15 +30,9 @@
     <ClInclude Include="LCDMenu.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="xlcd_menu_ino\LCDMenu.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="LCDMenu.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="xlcd_menu_ino\LCDMenu.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

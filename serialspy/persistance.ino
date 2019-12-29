@@ -1,45 +1,18 @@
-/* ===============================================
- * Project: XLCD, persistance read and write
- * ===============================================
- * Autor:     Frank (xpix) Herrmann
- * Email:     xpixer@gmail.com
- * License:   all Free
- * Last edit: 30.08.2013
- */ 
+//=========================================================
+//Project: GRBL Pendant
+//Module:  persistance.ino        
+//=========================================================
+//
+// Author: Andrew Fernie
+// Source code freely released - do with it what you like!
+//
+//----------------------------------------------------------
+// This code started from the XLCD project by Frank Herrmann
+//----------------------------------------------------------
 
-int address_buttons = 100;
-
-void get_button_values(){
-	// Read button values from eeprom
-	for(int i = 0; i <= COUNT_OF(button_power); i++){
-		if(int value = get_set_button_power(i, 0)){
-			if(value >= BUTTONHYSTERESIS){
-				// value was saved
-				button_power[i] = value;
-			} else {
-				// save value
-				get_set_button_power(i, button_power[i]);
-			}
-		}
-	}
-}
-
-int get_set_button_power(int button, int intvalue){
-	// get button address (1 = 102, 2 = 104, ...)
-   int address = (address_buttons + (2 * button));
-
-   // set value to eeprom
-	if(intvalue > 0) 
-      EEPROMWriteInt(address, intvalue);
-
-   // read from eeprom
-	return EEPROMReadInt(address);
-}
-
-/* --------------- EEPROM Uthilitis ----------
-	Steal from:
-	http://blog.ncode.ca/?p=42
-*/
+// --------------- EEPROM Utilities ----------
+//	From:	http://blog.ncode.ca/?p=42
+//
 
 //This function will write a 2 byte integer to the eeprom at the specified address and address + 1
 void EEPROMWriteInt(int p_address, int p_value)

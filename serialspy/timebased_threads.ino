@@ -1,89 +1,98 @@
-/* ===============================================
- * Project: XLCD, threads
- * ===============================================
- * Autor:     Frank (xpix) Herrmann
- * Email:     xpixer@gmail.com
- * License:   all Free
- * Last edit: 30.08.2013
- */ 
+//=========================================================
+//Project: GRBL Pendant
+//Module:  timebased_threads.ino         
+//=========================================================
+//
+// Author: Andrew Fernie
+// Source code freely released - do with it what you like!
+//
+//----------------------------------------------------------
+// This code started from the XLCD project by Frank Herrmann
+//----------------------------------------------------------
 
 
-/* 
-	************************************* 
-	* Thread to get buttons
-	************************************* 
-	*/
+//
+//	 *************************************
+//   Thread to get buttons
+//	 *************************************
+//
 void simpleThread_setup(readButtons)
 {
 	// output
-}  
+}
 
 boolean simpleThread_loop(readButtons)
 {
 
-#if defined(BUTTONS_A_ADC_PIN)
-	byte button = ReadButton();
-	if(button >= 0 && button < 50){
-		call_button(button);
-	}
-#endif    
-
-	return false;    
+	return false;
 }
 
 
-/* 
-	************************************* 
-	* Thread to send a '?' to 
-	* get GRBL position informations
-	************************************* 
-	*/
+//
+//	*************************************
+//	Thread to send a '?' to
+//	get GRBL position informations
+//	*************************************
+//
 void simpleThread_setup(getPositions)
 {
 	// output
-}  
+}
 
 boolean simpleThread_loop(getPositions)
 {
 
-   // Test when called last time and if this time less the interval time,
-   if((millis() - lastCall) < simpleThread_dynamic_getLoopTime(getPositions)){
-      return false;
-   }
+	// Test when called last time and if this time less the interval time,
+	if ((millis() - lastCall) < simpleThread_dynamic_getLoopTime(getPositions))
+	{
+		return false;
+	}
 
 	// output counter value
 	grblSerial.print('?');
 
 #if defined(DEBUG)
 	Serial.print(F("<Free "));
-	Serial.print(freeRam());
+	Serial.print(freeMem());
 	Serial.println(F(">"));
 #endif
-    
-	return false;    
+
+	return false;
 }
 
-/* 
-	************************************* 
-	* Thread to send a '$G' to 
-	* get GRBL position informations
-	************************************* 
-	*/
+//
+//	*************************************
+//	Thread to send a '$G' to
+//	get GRBL position informations
+//	*************************************
+//
 void simpleThread_setup(getStates)
 {
 	// output
-}  
+}
 
 boolean simpleThread_loop(getStates)
 {
 	// output counter value
 	grblSerial.print("$G\n");
-    
-	return false;    
+
+	return false;
 }
 
-int freeRam () {
-	extern int __heap_start, *__brkval;
-	int v;
-	return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval);
+uint32_t freeMem()
+{ 
+	// for Teensy 3.2
+	uint32_t stackTop;
+	uint32_t heapTop;
+
+	// current position of the stack.
+	stackTop = (uint32_t)& stackTop;
+
+	// current position of heap.
+	void* hTop = malloc(1);
+	heapTop = (uint32_t)hTop;
+	free(hTop);
+
+	// The difference is (approximately) the free, available ram.
+	return stackTop - heapTop;
 }

@@ -1,9 +1,15 @@
-/* 
-* LCDMenu.cpp
-*
-* Created: 27.08.2013 15:21:23
-* Author: C5125630
-*/
+//=========================================================
+//Project: GRBL Pendant
+//Module:  LCDMenu.cpp
+//=========================================================
+//
+// Author: Andrew Fernie
+// Source code freely released - do with it what you like!
+//
+//----------------------------------------------------------
+// This code started from the XLCD project by Frank Herrmann
+//----------------------------------------------------------
+
 
 #include "Arduino.h"
 #include "LCDMenu.h"
@@ -42,7 +48,7 @@ void LCDMenu::reinit()
 // add menu entry [menutext, callback]
 void LCDMenu::add_item(const __FlashStringHelper *ifsh, void (*menu_callback)(int), int callback_param)
 {
-	strcpy_P(buffer, (char*)pgm_read_word(&(ifsh)));
+	strcpy_P(buffer, (char*)pgm_read_dword(&(ifsh)));
 	add_item(buffer, menu_callback, callback_param);
 }
 

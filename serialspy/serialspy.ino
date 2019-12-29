@@ -1,42 +1,51 @@
-/* ===============================================
- * Project: XLCD
- * ===============================================
- * Autor:     Frank (xpix) Herrmann
- * Email:     xpixer@gmail.com
- * License:   all Free
- * Last edit: 30.08.2013
- */ 
+//=========================================================
+//Project: GRBL Pendant
+//Module:  serialspy.ino        
+//=========================================================
+//
+// Author: Andrew Fernie
+// Source code freely released - do with it what you like!
+//
+//----------------------------------------------------------
+// This code started from the XLCD project by Frank Herrmann
+//----------------------------------------------------------
 
-/* 
- * ===============================================
- * Includes
- * =============================================== 
- */
+//
+// ===============================================
+// Includes
+// ===============================================
+//
 
+#include <Keypad.h>
+#include <Key.h>
 #include <EEPROM.h>
 #include <simpleThread.h>
 #include <Encoder.h>
 
 
-/* XLCD Prototype on Arduino UNO or compatible
- * Frank (xpix) Herrmann / 07/2013
- *
- */
-
-/* 
- * ===============================================
- * Defines
- * =============================================== 
- */
+//
+// ===============================================
+// Defines
+// ===============================================
+//
 
 // MODE ------------------------------------------
 #define MODE_PROXY   // works as proxy between PC and GRBL
 //#define MODE_SPY   // works only as spy on the TX line 
-                     // (no buttons, no serial console, no interaction with grbl)
+					 // (no buttons, no serial console, no interaction with grbl)
 
-// Serial speed ----------------------------------
-#define PC_SERIAL       19200 // must be faster as grbl!
-#define GRBL_SERIAL     9600
+// Normal serial for debug ----------------------------------
+#define PC_SERIAL       115200  
+
+// Serial to GRBL
+#define grblSerial      Serial2
+#define GRBL_SERIAL     115200 
+
+// G-Code sender. Must be as fast as grbl!
+#define gsSerial        Serial3
+#define GS_SERIAL       115200 
+
+const int BUFFER_SIZE = 70;
 
 // LCD -------------------------------------------
 #define LCD_ADDR		   0x27  // I2C LCD Address
@@ -45,41 +54,39 @@
 #define LCD_cols			20
 #define LCD_rows			4
 
+#if(LCD_cols==16)
+#define LCD_EMPTY   F("                ")
+#else
+#define LCD_EMPTY   F("                    ")
+#endif
+
 #if defined(LCD_4BIT)
-   #define LCD_EN          12
-   #define LCD_RW          11
-   #define LCD_D4          4
-   #define LCD_D5          5
-   #define LCD_D6          6
-   #define LCD_D7          7
+#define LCD_EN          12
+#define LCD_RW          11
+#define LCD_D4          4
+#define LCD_D5          5
+#define LCD_D6          6
+#define LCD_D7          7
 #elif defined(LCD_ADDR)
-   #define LCD_EN          2
-   #define LCD_RW          1
-   #define LCD_RS          0
-   #define LCD_D4          4
-   #define LCD_D5          5
-   #define LCD_D6          6
-   #define LCD_D7          7
+#define LCD_EN          2
+#define LCD_RW          1
+#define LCD_RS          0
+#define LCD_D4          4
+#define LCD_D5          5
+#define LCD_D6          6
+#define LCD_D7          7
 #endif
 
 
 #if defined(MODE_PROXY)
    // Rotary Encoder --------------------------------
-   #define ENC_A              2     // Encoder interrupt pin
-   #define ENC_B              3     // Encoder second pin
-   #define ENC_S              10    // Encoder select pin
+#define ENC_A              2     // Encoder interrupt pin
+#define ENC_B              3     // Encoder second pin
+#define ENC_S              4     // Encoder select pin
 
-   // Buttons ---------------------------------------
-   //#define BUTTONS_A_ADC_PIN  A0    // A0 is the button ADC input A
-   //#define BUTTONS_B_ADC_PIN  A1    // A1 is the button ADC input B
-   //#define BUTTONS_C_ADC_PIN  A2    // A2 is the button ADC input C [optional]
-   //#define BUTTONS_D_ADC_PIN  A3    // A3 is the button ADC input D [optional]
-   #define BUTTONHYSTERESIS   10    // hysteresis for valid button sensing window
-   #define BUTTON_NONE        0     // no pressed state
-   
-   // EEPROM addresses
-   #define EEPROM_BUTTONS		100
-   #define EEPROM_INTERVAL		150
+// EEPROM addresses
+#define EEPROM_BUTTONS		100
+#define EEPROM_INTERVAL		150
 #endif
 
 // ========================== END Defines ========
@@ -87,7 +94,15 @@
 // only for debugging
 #define DEBUG
 
-#define VERSION         0.2
+//#define DEBUG_IO
+
+#ifdef DEBUG_IO
+#define DEBUG_TXT(str) Serial.println(str);
+#else
+#define DEBUG_TXT(str); 
+#endif
+
+#define VERSION         0.3
 
 // Makros
 #define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
@@ -104,242 +119,418 @@
 #define ALARM           6
 #define CHECK           7
 
-// Measure Power on when pressed button and note this value here
-// use resistor network 680 Ohm
-// Buttons:            0   1   2    3    4    5    6    7
-int button_power[] = {30, 262, 415, 517, 589, 643, 685, 718}; // Power data for every pressed button
 
-// glob Vars  ------------------------------------
-const int		BUFFER_SIZE			 = 70;
-byte				buttonJustPressed  = false;         //this will be true after a ReadButtons() call if triggered
-byte				buttonJustReleased = false;         //this will be true after a ReadButtons() call if triggered
-byte				buttonWas          = 0;             //used by ReadButtons() for detection of button events
-volatile byte  button_pressed;
+//
+// ===============================================
+// Inits
+// ===============================================
+ //
 
-/* 
- * ===============================================
- * Inits
- * =============================================== 
- */
-//SoftwareSerial grblSerial(GRBL_RX, GRBL_TX); // RX, TX
-#define grblSerial    Serial2
 
-// Add Threads to refresh status informations from GRBL
+ // Add Threads to refresh status informations from GRBL
 #define _sT_cnt  _sT_cnt_3    // count of threads(?, $G)
 simpleThread_init(_sT_cnt);   // init threads
-simpleThread_new_timebased_dynamic  (_sT_P1  , _sT_millis, 5000, _sT_start ,  getPositions);	// get position info (?)
-simpleThread_new_timebased_dynamic  (_sT_P2  , _sT_millis, 5000, _sT_start ,  getStates);	// get state info ($G) (not supported from UniversalGcodeSender)
-simpleThread_new_timebased_dynamic  (_sT_P3  , _sT_millis,  200, _sT_start ,  readButtons);	// get button value
+simpleThread_new_timebased_dynamic(_sT_P1, _sT_millis, 5000, _sT_start, getPositions);	// get position info (?)
+simpleThread_new_timebased_dynamic(_sT_P2, _sT_millis, 5000, _sT_start, getStates);	// get state info ($G) (not supported from UniversalGcodeSender)
+simpleThread_new_timebased_dynamic(_sT_P3, _sT_millis, 200, _sT_start, readButtons);	// get button value
 
 // make a group
 simpleThread_group_init(group_one, 2) {
-   simpleThread_group(getPositions),
-   simpleThread_group(getStates)
+	simpleThread_group(getPositions),
+		simpleThread_group(getStates)
 };
-  
+
 
 // All inits for LCD control
 #if defined(LCD_4BIT)
-   #include <LiquidCrystal.h>   // LCD
-   LiquidCrystal myLCD(LCD_EN, LCD_RW, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
+#include <LiquidCrystal.h>   // LCD
+LiquidCrystal myLCD(LCD_EN, LCD_RW, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 #elif defined(LCD_ADDR)
-   #include <Wire.h>                // I2C Communication
-   #include <LiquidCrystal_I2C.h>   // LCD over I2C
-   // Set the pins on the I2C chip used for LCD connections:
-   //                         addr, en,rw,rs,d4,d5,d6,d7,bl,blpol
-   LiquidCrystal_I2C myLCD(LCD_ADDR, LCD_EN, LCD_RW, LCD_RS, LCD_D4, LCD_D5, LCD_D6, LCD_D7, 3, POSITIVE);  // Set the LCD I2C address
+#include <Wire.h>                // I2C Communication
+#include <LiquidCrystal_I2C.h>   // LCD over I2C
+// Set the pins on the I2C chip used for LCD connections:
+//                         addr, en,rw,rs,d4,d5,d6,d7,bl,blpol
+LiquidCrystal_I2C myLCD(LCD_ADDR, LCD_EN, LCD_RW, LCD_RS, LCD_D4, LCD_D5, LCD_D6, LCD_D7, 3, POSITIVE);  // Set the LCD I2C address
 #endif
 
 
 #ifdef ENC_A
 	// RotaryEncoder
-	Encoder encoder(ENC_A, ENC_B);
+Encoder encoder(ENC_A, ENC_B);
+long encoderPosition = -999;
+bool encoderSwitch = false;
 #endif
 
 // LCD Menu
 // look in lcd_menu.ino for build menus
 // LCDMenu menu(&myLCD, LCD_cols, LCD_rows);
 
-/* 
- * ===============================================
- * Main
- * =============================================== 
- */
+long lastStatusRXTime = 0;
+long lastStateRXTime = 0;
+
+// System Timers
+// --------------
+unsigned long 	fast_loopTimer;				// Time in miliseconds of main control loop
+unsigned long 	fast_loopTimeStamp;			// Time Stamp when fast loop was complete
+uint8_t 		delta_ms_fast_loop; 		// Delta Time in miliseconds
+int 			mainLoop_count;
+
+unsigned long 	medium_loopTimer;			// Time in miliseconds of medium loop
+byte 			medium_loopCounter;			// Counters for branching from main control loop to slower loops
+uint8_t			delta_ms_medium_loop;
+
+unsigned long 	slow_loopTimer;			// Time in miliseconds of medium loop
+byte 			slow_loopCounter;
+uint8_t 		delta_ms_slow_loop; 		// Delta Time in miliseconds
+byte 			superslow_loopCounter;
+byte			counter_one_herz;
+
+// Keypad Setup
+// --------------
+const byte rows = 4; //four rows
+const byte cols = 4; //four columns
+char keys[rows][cols] = {
+  {'1','2','3','4'},
+  {'5','6','7','8'},
+  {'9','0','A','B'},
+  {'C','D','E','F'}
+};
+byte rowPins[rows] = { 14, 15, 16, 17 }; //connect to the row pinouts of the keypad
+byte colPins[cols] = { 20, 21, 22, 23 }; //connect to the column pinouts of the keypad
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, rows, cols);
+
+//
+// ===============================================
+// Main
+// ===============================================
+ //
 
 
 
-/*  ---------- Setup  ----------- */
+ //  ---------- Setup  ----------- //
 
-void setup() 
-{ 
-   Serial.begin(PC_SERIAL);   // open serial to PC
+void setup()
+{
+	Serial.begin(PC_SERIAL);   // open serial to PC
 
-	// read or save button analog values
-	get_button_values();
 
 #ifdef ENC_S
 	// set Select pin from Rotary Encoder to input
 	pinMode(ENC_S, INPUT);      // sets the encoder select digital pin
 #endif
 
-   /* init threads */
-   simpleThread_initSetup(_sT_cnt);
-   //simpleThread_dynamic_setLoopTime(getPositions,	EEPROMReadInt(EEPROM_INTERVAL));
-   //simpleThread_dynamic_setLoopTime(getStates,		EEPROMReadInt(EEPROM_INTERVAL));
+   // init threads //
+	simpleThread_initSetup(_sT_cnt);
+	//simpleThread_dynamic_setLoopTime(getPositions,	EEPROMReadInt(EEPROM_INTERVAL));
+	//simpleThread_dynamic_setLoopTime(getStates,		EEPROMReadInt(EEPROM_INTERVAL));
 
-   myLCD.begin(LCD_cols, LCD_rows);
+	myLCD.begin(LCD_cols, LCD_rows);
 
-   // This is the serial connect to PC, we get some commands
-   // but we can also print some additional information about this module
-   // and the parser from Client program will ignore this
-   Serial.print(F("<XLCD "));
-   Serial.print(VERSION);
-   Serial.println(F(">"));
-   Serial.println(F("<All commands for XLCD start with a colon ':'>"));
-   Serial.println(F("<Call help with ':?'>"));
+	// This is the serial connect to PC, we get some commands
+	// but we can also print some additional information about this module
+	// and the parser from Client program will ignore this
+	Serial.print(F("<XLCD "));
+	Serial.print(VERSION);
+	Serial.println(F(">"));
+	Serial.println(F("<All commands for XLCD start with a colon ':'>"));
+	Serial.println(F("<Call help with ':?'>"));
 
-   // Old LCD Screens
-   myLCD.begin(LCD_cols,LCD_rows); // letter, row
+	// Old LCD Screens
+	myLCD.begin(LCD_cols, LCD_rows); // letter, row
 
-   myLCD.setCursor(0,0); // letter, row
-   myLCD.print(F("XLCD "));
-   myLCD.print(VERSION);
-   myLCD.setCursor(0,1); // letter, row
-   myLCD.print(F("Connect ... "));
-   
-   delay(2000);
-   
-   // open serial port to GRBL
-   grblSerial.begin(GRBL_SERIAL); // open serial to grbl
-   // reset grbl device (ctrl-X) for Universal Gcode Sender
-   grblSerial.write(0x18);
+	myLCD.setCursor(0, 0); // letter, row
+	myLCD.print(F("XLCD "));
+	myLCD.print(VERSION);
+	myLCD.setCursor(0, 1); // letter, row
+	myLCD.print(F("Connect ... "));
 
-   
-   myLCD.clear();
+	delay(2000);
+
+	// open serial port to G Code senser 
+	gsSerial.begin(GS_SERIAL);
+
+	// open serial port to GRBL
+	grblSerial.begin(GRBL_SERIAL);
+	// reset grbl device (ctrl-X) for Universal Gcode Sender
+	grblSerial.write(0x18);
+
+
+	myLCD.clear();
 }//SETUP
 
 
 
-/*  ---------- Loop ----------- */
+//  ---------- Loop ----------- //
 int pc = 0;
 int gr = 0;
+int pc_chars = 0;
+int gr_chars = 0;
+int loopCount = 0;
 char pcserial[BUFFER_SIZE];
 char grserial[BUFFER_SIZE];
+char lcdRowString[LCD_cols];
+uint32_t  lastLCDOut = 0;
 
-void loop() 
-{ 
-   // Jobs
-   // simpleThread_run(_sT_priority);
 
-   // Get data from GRBL ==> PC
-   while(grblSerial.available()) {
-      char c = grblSerial.read();
-   
-      // wait for a complete line 
-      // and parse it
-      if(c == '\n'){
-         parseGrblLine(grserial);
-   		gr = 0;
-         memset(&grserial[0], 0, sizeof(grserial));
-         grserial[0] = '\0';
-      } else {
-   		if(gr < BUFFER_SIZE)
-   			grserial[gr++] = c;
-      }
-   
-      // dont send data from $G to Serial, 
-      // cuz UGS don't understand this
-      // dont send data if string empty
-      if(grserial[0] != '['){
-         Serial.print(c);
-      }
-   }
+void loop()
+{
+	// Jobs
+	// simpleThread_run(_sT_priority);
 
-  // Get data from PC ==> GRBL
-   while(Serial.available()) {
-      char c = Serial.read();
-      
-      // wait for a complete line
-      // and parse it
-      if(c == '\n'){
-         parsePCCommand(pcserial);
-         pc = 0;
-         memset(&pcserial[0], 0, sizeof(pcserial));
-         pcserial[0] = '\0';
-      } else {
-         // if to big ...
-         if(pc < BUFFER_SIZE){
-         	pcserial[pc++] = c;
-         }
-      }
+	serial_io_grbl();
+	serial_io_gs();
 
-      // dont send serial commands (:char) to grbl
-      if(pcserial[0] != ':'){
-	      grblSerial.print(c);
-      }
-   }
+	// We want this to execute at 50Hz if possible
+	// -------------------------------------------
+	if (millis() - fast_loopTimer > 19) {
+		delta_ms_fast_loop = millis() - fast_loopTimer;
+
+		fast_loopTimer = millis();
+
+		mainLoop_count++;
+
+		// Execute the fast (nominal 50Hz) loop
+		// ------------------------------------
+		fast_loop();
+
+		// Execute the medium loop (internally sub-banded by 5 to a nominal 10Hz)
+		// -----------------------------------------------------------------------
+		medium_loop();
+
+		// Execute the slow (nominal 1Hz) loop
+		// ------------------------------------
+		counter_one_herz++;
+		if (counter_one_herz >= 50)
+		{
+			one_second_loop();
+			counter_one_herz = 0;
+		}
+
+		fast_loopTimeStamp = millis();
+	}
+
 }//LOOP
 
 
 // ---------- Subroutines -----------
 
-/*
-  split a string on one or more delimiter 
-  and return split at index
-  split(char* string[]="1,2;3")
-*/
-char* split( char* string, char* delimiter, int index ){
-    char *ptr;
+//
+// split a string on one or more delimiter
+// and return split at index
+// split(char* string[] = "1,2;3")
+//
+char* split(char* string, char* delimiter, int index)
+{
+	char* ptr;
 
-    char buffer[BUFFER_SIZE];
-    strcpy(buffer, string);
-    
-    // init and create first cut
-    ptr = strtok(buffer, delimiter);
-    int x = 0;    
-    while(ptr != NULL) {
-      if(x++ >= index)
-        break;
-      // next one
-      ptr = strtok(NULL, delimiter);
-    }
+	char buffer[BUFFER_SIZE];
+	strcpy(buffer, string);
 
-    return ptr;
+	// init and create first cut
+	ptr = strtok(buffer, delimiter);
+	int x = 0;
+	while (ptr != NULL) {
+		if (x++ >= index)
+			break;
+		// next one
+		ptr = strtok(NULL, delimiter);
+	}
+
+	return ptr;
 }
 
-// Analyze every command (from PC => Xlcd) and choose an action
-void parsePCCommand(char* line){
-  char *c2 = strrchr(line, '\r');
-  *c2 = ' ';
-
-  // All commands with an ':' at start can control XLCD 
-  if( line[0] == ':')  parse_command_line(line);
-}
-
-// Analyze every line and choose an action
-void parseGrblLine(char* line){
-  char *c2 = strrchr(line, '\r');
-  *c2 = ' ';
-
-  if( line[0] == '<' )  parse_status_line(line);
-  if( line[0] == '[' )  parse_state_line(line);
-}
 
 // State set or get state from machine
 int status = 0;
 
-int state(char* tmp){
-   if(strcmp(tmp, "Idle")==0)    status = IDLE;
-   if(strcmp(tmp, "Queue")==0)   status = QUEUE;
-   if(strcmp(tmp, "Run")==0)     status = RUN;
-   if(strcmp(tmp, "Hold")==0)    status = HOLD;
-   if(strcmp(tmp, "Home")==0)    status = HOME;
-   if(strcmp(tmp, "Alarm")==0)   status = ALARM;
-   if(strcmp(tmp, "Check")==0)   status = CHECK;
+int state(char* tmp)
+{
+	if (strcmp(tmp, "Idle") == 0)    status = IDLE;
+	if (strcmp(tmp, "Queue") == 0)   status = QUEUE;
+	if (strcmp(tmp, "Run") == 0)     status = RUN;
+	if (strcmp(tmp, "Hold") == 0)    status = HOLD;
+	if (strcmp(tmp, "Home") == 0)    status = HOME;
+	if (strcmp(tmp, "Alarm") == 0)   status = ALARM;
+	if (strcmp(tmp, "Check") == 0)   status = CHECK;
 
-   return status;
+	return status;
 }
 
-int state(){
-   return status;
+int state()
+{
+	return status;
+}
+
+// Main loop
+void fast_loop()
+{
+	// This is the fast loop
+	// ---------------------
+
+}
+
+void medium_loop()
+{
+	// This is the start of the medium loop 
+	// -----------------------------------------
+
+	char key;
+
+	switch (medium_loopCounter)
+	{
+	case 0:
+		medium_loopCounter++;
+
+		delta_ms_medium_loop = millis() - medium_loopTimer;
+		medium_loopTimer = millis();
+
+		encoderPosition = ReadEncoder();
+		encoderSwitch = ReadEncoderSwitch();
+
+		break;
+
+		//---------------------------------------------
+	case 1:
+		medium_loopCounter++;
+
+		key = keypad.getKey();
+
+		if (key != NO_KEY)
+		{
+			ProcessKey(key);
+		}
+		break;
+
+		//------------------------------
+	case 2:
+		medium_loopCounter++;
+
+		break;
+
+		//--------------------------------------------
+	case 3:
+		medium_loopCounter++;
+
+		break;
+
+		// This case controls the slow loop
+		//---------------------------------
+	case 4:
+		medium_loopCounter = 0;
+
+		slow_loop();
+
+		break;
+	}
+}
+
+void slow_loop()
+{
+	// This is the slow (2Hz) loop pieces
+	//----------------------------------------
+	switch (slow_loopCounter) {
+	case 0:
+		slow_loopCounter++;
+
+		delta_ms_slow_loop = millis() - slow_loopTimer;
+		slow_loopTimer = millis();
+
+		display_state();
+
+		break;
+
+	case 1:
+		slow_loopCounter++;
+
+		if (millis() - lastStateRXTime > 1000)
+		{
+			grblSerial.print("$G\n");
+		}
+
+		break;
+
+	case 2:
+		slow_loopCounter++;
+		if (millis() - lastStatusRXTime > 1000)
+		{
+			grblSerial.print("?\n");
+		}
+
+
+		break;
+
+	case 3:
+		slow_loopCounter++;
+
+		break;
+
+	case 4:
+		slow_loopCounter = 0;
+
+		break;
+	}
+}
+
+void one_second_loop()
+{
+}
+
+void ProcessKey(char key)
+{
+	switch (key)
+	{
+	case '1':
+		// Unlock
+		grblSerial.print("$X\n");
+		break;
+
+	case '2':
+		// Home
+		grblSerial.print("$H\n");
+		break;
+
+	case '3':
+		break;
+
+	case '4':
+		break;
+
+	case '5':
+		break;
+
+	case '6':
+		break;
+
+	case '7':
+		break;
+
+	case '8':
+		break;
+
+	case '9':
+		break;
+
+	case '0':
+		break;
+
+	case 'A':
+		break;
+
+	case 'B':
+		break;
+
+	case 'C':
+		break;
+
+	case 'D':
+		break;
+
+	case 'E':
+		break;
+
+	case 'F':
+		break;
+
+		//default:
+	}
 }
