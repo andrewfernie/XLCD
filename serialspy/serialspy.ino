@@ -199,6 +199,20 @@ byte rowPins[rows] = { 14, 15, 16, 17 }; //connect to the row pinouts of the key
 byte colPins[cols] = { 20, 21, 22, 23 }; //connect to the column pinouts of the keypad
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, rows, cols);
 
+// CNC Status Data 
+// ---------------
+
+struct AxisData
+{ 
+	float x;
+	float y;
+	float z;
+};
+AxisData currentPosition;
+char     positionCoordSystem[10];
+
+float currentSpindleSpeed;
+
 //
 // ===============================================
 // Main
@@ -473,64 +487,8 @@ void slow_loop()
 
 void one_second_loop()
 {
-}
+	//char tmpStr[80];
 
-void ProcessKey(char key)
-{
-	switch (key)
-	{
-	case '1':
-		// Unlock
-		grblSerial.print("$X\n");
-		break;
-
-	case '2':
-		// Home
-		grblSerial.print("$H\n");
-		break;
-
-	case '3':
-		break;
-
-	case '4':
-		break;
-
-	case '5':
-		break;
-
-	case '6':
-		break;
-
-	case '7':
-		break;
-
-	case '8':
-		break;
-
-	case '9':
-		break;
-
-	case '0':
-		break;
-
-	case 'A':
-		break;
-
-	case 'B':
-		break;
-
-	case 'C':
-		break;
-
-	case 'D':
-		break;
-
-	case 'E':
-		break;
-
-	case 'F':
-		break;
-
-		//default:
-	}
+	//sprintf(tmpStr, "Current Position: %f, %f, %f\n", currentPosition.x, currentPosition.y, currentPosition.z);
+	//Serial.print(tmpStr);
 }

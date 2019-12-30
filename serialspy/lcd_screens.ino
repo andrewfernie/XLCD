@@ -81,8 +81,8 @@ void parse_status_line(char* line)
 	// Display on LCD ...
 	// lcd screen
 	// |--------------|
-	// State  Z:555.529
-	// 000.000  000.000
+	// State  WPos Z:555.529
+	// 000.000       000.000
 
 	// XXX: to use a switch to display work position or other things :)
 	//myLCD.clear();
@@ -91,6 +91,8 @@ void parse_status_line(char* line)
 	char tmpStr[LCD_cols];
 	size_t len;
 	char* temp;
+	float tmpFloat;
+	int   n;
 
 	lastStatusRXTime = millis();
 
@@ -102,23 +104,64 @@ void parse_status_line(char* line)
 	myLCD.print(tmpStr);
 	state(temp);
 
+	// Coordinates ..
+	temp = split(line, delim, 1);
+	strncpy(positionCoordSystem, temp, sizeof(positionCoordSystem)-1);
+	
+	myLCD.setCursor(7, 0); // letter, row
+	sprintf(tmpStr, "%4s", positionCoordSystem);
+	myLCD.print(tmpStr);
+
+
 	// Z Machine position ...
 	temp = split(line, delim, 4);
-	sprintf(tmpStr, "%9.9s", temp);
+	n = sscanf(temp, "%f", &tmpFloat);
+
+	if (n == 1)
+	{
+		currentPosition.z = tmpFloat;
+		sprintf(tmpStr, "%9.3f", currentPosition.z);
+	}
+	else
+	{
+		strcpy(tmpStr, "---.---");
+	}
+	
 	len = strlen(tmpStr);
 	myLCD.setCursor((LCD_cols - len), 0);
 	myLCD.print(tmpStr);
-
+	
 	// Second Line
 	// X Machine position ...
 	temp = split(line, delim, 2);
+	n = sscanf(temp, "%f", &tmpFloat);
+
+	if (n == 1)
+	{
+		currentPosition.x = tmpFloat;
+		sprintf(tmpStr, "%-9.3f", currentPosition.x);
+	}
+	else
+	{ 
+		strcpy(tmpStr, "---.---");
+	}
 	myLCD.setCursor(0, 1);
-	sprintf(tmpStr, "%-9s", temp);
 	myLCD.print(tmpStr);
 
 	// Y Machine position ...
 	temp = split(line, delim, 3);
-	sprintf(tmpStr, "%9.9s", temp);
+	n = sscanf(temp, "%f", &tmpFloat);
+
+	if (n == 1)
+	{
+		currentPosition.y = tmpFloat;
+		sprintf(tmpStr, "%9.3f", currentPosition.y);
+	}
+	else
+	{
+		strcpy(tmpStr, "---.---");
+	}
+
 	len = strlen(tmpStr);
 	myLCD.setCursor((LCD_cols - len), 1);
 	myLCD.print(tmpStr);

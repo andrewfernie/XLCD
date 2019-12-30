@@ -22,6 +22,7 @@
     <None Include="timebased_threads.ino" />
     <None Include="serial_io.ino" />
     <None Include="encoder_io.ino" />
+    <None Include="key_commands.ino" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="__vm\.serialspy.vsarduino.h">
