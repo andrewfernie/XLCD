@@ -111,20 +111,13 @@ const int BUFFER_SIZE = 70;
 #define GRBL_RX			8
 #define GRBL_TX			9 
 
-#define IDLE            1
-#define QUEUE           2
-#define RUN             3
-#define HOLD            4
-#define HOME            5
-#define ALARM           6
-#define CHECK           7
-
+enum class GRBLStates  { Idle, Queue, Run, Hold, Home, Alarm, Check };
 
 //
 // ===============================================
 // Inits
 // ===============================================
- //
+//
 
 
  // Add Threads to refresh status informations from GRBL
@@ -140,8 +133,9 @@ simpleThread_group_init(group_one, 2) {
 		simpleThread_group(getStates)
 };
 
-
+// -------------------------
 // All inits for LCD control
+// -------------------------
 #if defined(LCD_4BIT)
 #include <LiquidCrystal.h>   // LCD
 LiquidCrystal myLCD(LCD_EN, LCD_RW, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
@@ -153,9 +147,10 @@ LiquidCrystal myLCD(LCD_EN, LCD_RW, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 LiquidCrystal_I2C myLCD(LCD_ADDR, LCD_EN, LCD_RW, LCD_RS, LCD_D4, LCD_D5, LCD_D6, LCD_D7, 3, POSITIVE);  // Set the LCD I2C address
 #endif
 
-
+// -------------
+// RotaryEncoder
+// -------------
 #ifdef ENC_A
-	// RotaryEncoder
 Encoder encoder(ENC_A, ENC_B);
 long encoderPosition = -999;
 bool encoderSwitch = false;
@@ -168,6 +163,7 @@ bool encoderSwitch = false;
 long lastStatusRXTime = 0;
 long lastStateRXTime = 0;
 
+// --------------
 // System Timers
 // --------------
 unsigned long 	fast_loopTimer;				// Time in miliseconds of main control loop
@@ -185,8 +181,9 @@ uint8_t 		delta_ms_slow_loop; 		// Delta Time in miliseconds
 byte 			superslow_loopCounter;
 byte			counter_one_herz;
 
+// ------------
 // Keypad Setup
-// --------------
+// ------------
 const byte rows = 4; //four rows
 const byte cols = 4; //four columns
 char keys[rows][cols] = {
@@ -199,8 +196,72 @@ byte rowPins[rows] = { 14, 15, 16, 17 }; //connect to the row pinouts of the key
 byte colPins[cols] = { 20, 21, 22, 23 }; //connect to the column pinouts of the keypad
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, rows, cols);
 
-// CNC Status Data 
-// ---------------
+// ------------
+// Pendant Mode
+// ------------
+enum class PendantModes { Monitor, Control};
+PendantModes pendantMode = PendantModes::Monitor;
+
+// --------------------------
+// CNC Controller Status Data 
+// --------------------------
+unsigned long lastCall = 0;
+
+// State codes for Grbl 1.1.   Source https://github.com/gnea/grbl/wiki/Grbl-v1.1-Commands
+// 
+// Motion Mode                 G0, G1, G2, G3, G38.2, G38.3, G38.4, G38.5, G80
+enum class MotionMode { Undefined, Rapid, Linear, CW, CCW, Probe_2, Probe_3, Probe_4, Probe_5, Cancel };
+MotionMode currentMotionMode = MotionMode::Undefined;
+
+// Coordinate System Select    G54, G55, G56, G57, G58, G59
+enum class CoordinateSystemSelect { Undefined, WCS1, WCS2, WCS3, WCS4, WCS5, WCS6 };
+CoordinateSystemSelect currentCoordinateSystemSelect = CoordinateSystemSelect::Undefined;
+
+// Plane Select                G17, G18, G19
+enum class PlaneSelect { Undefined, XY, ZX, YZ };
+PlaneSelect currentPlaneSelect = PlaneSelect::Undefined;
+
+// Distance Mode               G90, G91
+enum class DistanceMode { Undefined, Absolute, Incremental };
+DistanceMode currentDistanceMode = DistanceMode::Undefined;
+
+// Arc IJK Distance Mode       G91.1
+enum class ArcDistanceMode { Off, On };
+ArcDistanceMode currentArcDistanceMode = ArcDistanceMode::On;
+
+// Feed Rate Mode              G93, G94
+enum class FeedRateMode { Undefined, Inverse, Normal };
+FeedRateMode currentFeedRateMode = FeedRateMode::Undefined;
+
+// Units Mode                  G20, G21
+enum class UnitsMode { Undefined, Inches, mm };
+UnitsMode currentUnitsMode = UnitsMode::Undefined;
+
+// Cutter Radius Compensation  G40
+enum class CutterRadiusCompensation { Off, On };
+CutterRadiusCompensation currentCutterRadiusCompensation = CutterRadiusCompensation::Off;
+
+// Tool Length Offset          G43.1, G49
+enum class ToolLengthOffsetMode { Undefined, Dynamic, Cancel };
+ToolLengthOffsetMode currentToolLengthOffsetMode = ToolLengthOffsetMode::Undefined;
+
+// Program Mode                M0, M1, M2, M30
+enum class ProgramMode { Undefined, Stop, Optional, End, Rewind };
+ProgramMode currentProgramMode = ProgramMode::Undefined;
+
+// Spindle State               M3, M4, M5
+enum class SpindleState { Undefined, CW, CCW, Off };
+SpindleState currentSpindleState = SpindleState::Undefined;
+
+// Coolant State               M7, M8, M9
+enum class CoolantState { Undefined, Mist, Flood, Off };
+CoolantState currentCoolantState = CoolantState::Undefined;
+
+// Tool
+char currentTool[] = "   ";
+
+// Feed rate
+char currentFeedRate[] = "          ";
 
 struct AxisData
 { 
@@ -212,6 +273,19 @@ AxisData currentPosition;
 char     positionCoordSystem[10];
 
 float currentSpindleSpeed;
+
+// --------------
+// Jog parameters
+// --------------
+enum class CNCAxis { X, Y, Z};
+CNCAxis currentJogAxis = CNCAxis::X;
+
+enum class JogScalingValues { Low = 0, Medium = 1, High = 2 };
+float   jogScaling[3] = { 1.0, 10.0, 100.0 }; // values are mm per encoder revolution
+JogScalingValues   currentJogScaling = JogScalingValues::Low;
+
+float   jogRates[] = { 60.0, 90.0, 300.0, 600.0, 900.0, 3000.0 }; // values are "units" (mm or inches) per minute
+float  currentJogRate = jogRates[2];
 
 //
 // ===============================================
@@ -355,25 +429,19 @@ char* split(char* string, char* delimiter, int index)
 
 
 // State set or get state from machine
-int status = 0;
+GRBLStates grblState = GRBLStates::Alarm;
 
-int state(char* tmp)
+void set_grblState_from_chars(char* tmp)
 {
-	if (strcmp(tmp, "Idle") == 0)    status = IDLE;
-	if (strcmp(tmp, "Queue") == 0)   status = QUEUE;
-	if (strcmp(tmp, "Run") == 0)     status = RUN;
-	if (strcmp(tmp, "Hold") == 0)    status = HOLD;
-	if (strcmp(tmp, "Home") == 0)    status = HOME;
-	if (strcmp(tmp, "Alarm") == 0)   status = ALARM;
-	if (strcmp(tmp, "Check") == 0)   status = CHECK;
-
-	return status;
+	if (strcmp(tmp, "Idle") == 0)    grblState = GRBLStates::Idle;
+	if (strcmp(tmp, "Queue") == 0)   grblState = GRBLStates::Queue;
+	if (strcmp(tmp, "Run") == 0)     grblState = GRBLStates::Run;
+	if (strcmp(tmp, "Hold") == 0)    grblState = GRBLStates::Hold;
+	if (strcmp(tmp, "Home") == 0)    grblState = GRBLStates::Home;
+	if (strcmp(tmp, "Alarm") == 0)   grblState = GRBLStates::Alarm;
+	if (strcmp(tmp, "Check") == 0)   grblState = GRBLStates::Check;
 }
 
-int state()
-{
-	return status;
-}
 
 // Main loop
 void fast_loop()
@@ -456,7 +524,7 @@ void slow_loop()
 	case 1:
 		slow_loopCounter++;
 
-		if (millis() - lastStateRXTime > 1000)
+		if((pendantMode == PendantModes::Control) && (millis() - lastStateRXTime > 1000))
 		{
 			grblSerial.print("$G\n");
 		}
@@ -465,7 +533,7 @@ void slow_loop()
 
 	case 2:
 		slow_loopCounter++;
-		if (millis() - lastStatusRXTime > 1000)
+		if ((pendantMode == PendantModes::Control) && (millis() - lastStatusRXTime > 1000))
 		{
 			grblSerial.print("?\n");
 		}
@@ -491,4 +559,31 @@ void one_second_loop()
 
 	//sprintf(tmpStr, "Current Position: %f, %f, %f\n", currentPosition.x, currentPosition.y, currentPosition.z);
 	//Serial.print(tmpStr);
+}
+
+float get_jog_step()
+{
+	float step;
+	switch (currentJogScaling)
+	{
+	case JogScalingValues::Low:
+		step = jogScaling[0];
+		break;
+	case JogScalingValues::Medium:
+		step = jogScaling[1];
+		break;
+	case JogScalingValues::High:
+		step = jogScaling[2];
+		break;
+	default:
+		step = 0.0;
+	}
+
+	return step;
+}
+
+float get_jog_rate()
+{
+//	float   jogRates[] = { 60.0, 90.0, 300.0, 600.0, 900.0, 3000.0 }; // values are "units" (mm or inches) per minute
+	return currentJogRate;
 }
